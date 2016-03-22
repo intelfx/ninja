@@ -305,3 +305,7 @@ void SubprocessSet::Clear() {
     delete *i;
   running_.clear();
 }
+
+bool SubprocessSet::CanRunMore() {
+  return running_.empty();
+}

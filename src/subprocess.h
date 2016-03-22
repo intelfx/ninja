@@ -87,6 +87,7 @@ struct SubprocessSet {
   bool DoWork();
   Subprocess* NextFinished();
   void Clear();
+  bool CanRunMore();
 
   std::vector<Subprocess*> running_;
   std::queue<Subprocess*> finished_;
