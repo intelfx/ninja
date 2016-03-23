@@ -219,13 +219,10 @@ void TokenStore::Setup() {
   }
 }
 
-bool TokenStore::Available() const {
+bool TokenStore::Acquire() {
   if ((rfd_ < 0) || (available_ > 0))
     return true;
-  return false;
-}
 
-bool TokenStore::Acquire() {
   pollfd pollfds[] = {{rfd_, POLLIN, 0}};
   int ret = poll(pollfds, 1, 0);
   if (ret > 0) {
@@ -460,7 +457,5 @@ void SubprocessSet::Clear() {
 }
 
 bool SubprocessSet::CanRunMore() {
-  if (running_.empty() || tokens_.Available())
-    return true;
-  return tokens_.Acquire();
+  return running_.empty() || tokens_.Acquire();
 }
