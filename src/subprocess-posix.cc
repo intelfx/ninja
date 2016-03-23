@@ -185,6 +185,44 @@ const string& Subprocess::GetOutput() const {
   return buf_;
 }
 
+TokenStore::TokenStore() : available_(0), used_(0), rfd_(-1), wfd_(-1) {
+}
+
+TokenStore::~TokenStore() {
+}
+
+void TokenStore::Setup() {
+  const char *value = getenv("MAKEFLAGS");
+  if (value) {
+    const char *jobserver = strstr(value, "--jobserver-fds=");
+    if (jobserver) {
+      int rfd = -1;
+      int wfd = -1;
+      if ((sscanf(jobserver, "--jobserver-fds=%d,%d", &rfd, &wfd) == 2) &&
+          (rfd >= 0) && (wfd >= 0)) {
+        fprintf(stderr, "FOUND JOBSERVER %d %d\n", rfd, wfd);
+        rfd_ = rfd;
+        wfd_ = wfd;
+      }
+    }
+  }
+}
+
+bool TokenStore::Available() const {
+  if (rfd_ < 0)
+    return true;
+  return false;
+}
+
+void TokenStore::Reserve() {
+}
+
+void TokenStore::Release() {
+}
+
+void TokenStore::Clear() {
+}
+
 int SubprocessSet::interrupted_;
 
 void SubprocessSet::SetInterruptedFlag(int signum) {
@@ -225,18 +263,7 @@ SubprocessSet::SubprocessSet() {
   if (sigaction(SIGHUP, &act, &old_hup_act_) < 0)
     Fatal("sigaction: %s", strerror(errno));
 
-  const char *value = getenv("MAKEFLAGS");
-  if (value) {
-    const char *jobserver = strstr(value, "--jobserver-fds=");
-    if (jobserver) {
-      int rfd = -1;
-      int wfd = -1;
-      if ((sscanf(jobserver, "--jobserver-fds=%d,%d", &rfd, &wfd) == 2) &&
-          (rfd >= 0) && (wfd >= 0)) {
-        fprintf(stderr, "FOUND JOBSERVER %d %d\n", rfd, wfd);
-      }
-    }
-  }
+  tokens_.Setup();
 }
 
 SubprocessSet::~SubprocessSet() {
@@ -258,6 +285,8 @@ Subprocess *SubprocessSet::Add(const string& command, bool use_console) {
     delete subprocess;
     return 0;
   }
+  if (!running_.empty())
+    tokens_.Reserve();
   running_.push_back(subprocess);
   return subprocess;
 }
@@ -303,6 +332,8 @@ bool SubprocessSet::DoWork() {
       if ((*i)->Done()) {
         finished_.push(*i);
         i = running_.erase(i);
+        if (!running_.empty())
+          tokens_.Release();
         continue;
       }
     }
@@ -350,6 +381,8 @@ bool SubprocessSet::DoWork() {
       if ((*i)->Done()) {
         finished_.push(*i);
         i = running_.erase(i);
+        if (!running_.empty())
+          tokens_.Release();
         continue;
       }
     }
@@ -379,8 +412,11 @@ void SubprocessSet::Clear() {
        i != running_.end(); ++i)
     delete *i;
   running_.clear();
+  tokens_.Clear();
 }
 
 bool SubprocessSet::CanRunMore() {
-  return running_.empty();
+  if (running_.empty() || tokens_.Available())
+    return true;
+  return false;
 }
