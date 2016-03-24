@@ -307,5 +307,5 @@ void SubprocessSet::Clear() {
 }
 
 bool SubprocessSet::CanRunMore() {
-  return running_.empty();
+  return true;
 }
