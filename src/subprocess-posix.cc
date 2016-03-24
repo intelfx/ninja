@@ -185,6 +185,26 @@ const string& Subprocess::GetOutput() const {
   return buf_;
 }
 
+struct TokenStore {
+  TokenStore();
+  ~TokenStore();
+
+  bool Setup();
+  bool Acquire();
+  void Reserve();
+  void Release();
+  void Clear();
+
+ private:
+  int available_;
+  int used_;
+  int rfd_;
+  int wfd_;
+
+  bool CheckFd(int fd);
+  void Return();
+};
+
 TokenStore::TokenStore() : available_(0), used_(0), rfd_(-1), wfd_(-1) {
 }
 
@@ -192,7 +212,7 @@ TokenStore::~TokenStore() {
   Clear();
 }
 
-static bool CheckFd(int fd) {
+bool TokenStore::CheckFd(int fd) {
   if (fd < 0)
     return false;
   int ret = fcntl(fd, F_GETFD);
@@ -201,7 +221,7 @@ static bool CheckFd(int fd) {
   return true;
 }
 
-void TokenStore::Setup() {
+bool TokenStore::Setup() {
   const char *value = getenv("MAKEFLAGS");
   if (value) {
     const char *jobserver = strstr(value, "--jobserver-fds=");
@@ -214,13 +234,16 @@ void TokenStore::Setup() {
         fprintf(stderr, "FOUND JOBSERVER %d %d\n", rfd, wfd);
         rfd_ = rfd;
         wfd_ = wfd;
+        return true;
       }
     }
   }
+
+  return false;
 }
 
 bool TokenStore::Acquire() {
-  if ((rfd_ < 0) || (available_ > 0))
+  if (available_ > 0)
     return true;
 
   pollfd pollfds[] = {{rfd_, POLLIN, 0}};
@@ -237,8 +260,6 @@ bool TokenStore::Acquire() {
 }
 
 void TokenStore::Reserve() {
-  if (rfd_ < 0)
-    return;
   available_--;
   used_++;
 }
@@ -249,15 +270,11 @@ void TokenStore::Return() {
 }
 
 void TokenStore::Release() {
-  if (rfd_ < 0)
-    return;
   used_--;
   Return();
 }
 
 void TokenStore::Clear() {
-  if (rfd_ < 0)
-    return;
   available_ += used_;
   used_       = 0;
   while (available_-- > 0)
@@ -285,7 +302,7 @@ void SubprocessSet::HandlePendingInterruption() {
     interrupted_ = SIGHUP;
 }
 
-SubprocessSet::SubprocessSet() {
+SubprocessSet::SubprocessSet() : tokens_(NULL) {
   sigset_t set;
   sigemptyset(&set);
   sigaddset(&set, SIGINT);
@@ -304,7 +321,11 @@ SubprocessSet::SubprocessSet() {
   if (sigaction(SIGHUP, &act, &old_hup_act_) < 0)
     Fatal("sigaction: %s", strerror(errno));
 
-  tokens_.Setup();
+  TokenStore *tokenstore = new TokenStore;
+  if (tokenstore->Setup())
+    tokens_ = tokenstore;
+  else
+    delete tokenstore;
 }
 
 SubprocessSet::~SubprocessSet() {
@@ -326,8 +347,8 @@ Subprocess *SubprocessSet::Add(const string& command, bool use_console) {
     delete subprocess;
     return 0;
   }
-  if (!running_.empty())
-    tokens_.Reserve();
+  if (tokens_ && !running_.empty())
+    tokens_->Reserve();
   running_.push_back(subprocess);
   return subprocess;
 }
@@ -373,8 +394,8 @@ bool SubprocessSet::DoWork() {
       if ((*i)->Done()) {
         finished_.push(*i);
         i = running_.erase(i);
-        if (!running_.empty())
-          tokens_.Release();
+        if (tokens_ && !running_.empty())
+          tokens_->Release();
         continue;
       }
     }
@@ -422,8 +443,8 @@ bool SubprocessSet::DoWork() {
       if ((*i)->Done()) {
         finished_.push(*i);
         i = running_.erase(i);
-        if (!running_.empty())
-          tokens_.Release();
+        if (tokens_ && !running_.empty())
+          tokens_->Release();
         continue;
       }
     }
@@ -453,9 +474,10 @@ void SubprocessSet::Clear() {
        i != running_.end(); ++i)
     delete *i;
   running_.clear();
-  tokens_.Clear();
+  if (tokens_)
+    tokens_->Clear();
 }
 
 bool SubprocessSet::CanRunMore() {
-  return tokens_.Acquire();
+  return !tokens_ || tokens_->Acquire();
 }
