@@ -34,6 +34,7 @@
 #endif
 
 #include "exit_status.h"
+#include "tokenpool.h"
 
 /// Subprocess wraps a single async subprocess.  It is entirely
 /// passive: it expects the caller to notify it when its fds are ready
@@ -76,9 +77,6 @@ struct Subprocess {
   friend struct SubprocessSet;
 };
 
-// forward declaration
-struct TokenStore;
-
 /// SubprocessSet runs a ppoll/pselect() loop around a set of Subprocesses.
 /// DoWork() waits for any state change in subprocesses; finished_
 /// is a queue of subprocesses as they finish.
@@ -111,10 +109,10 @@ struct SubprocessSet {
   struct sigaction old_term_act_;
   struct sigaction old_hup_act_;
   sigset_t old_mask_;
+#endif
 
  private:
-  TokenStore *tokens_;
-#endif
+  TokenPool *tokens_;
 };
 
 #endif // NINJA_SUBPROCESS_H_
