@@ -35,6 +35,7 @@
 #include "state.h"
 #include "status.h"
 #include "subprocess.h"
+#include "tokenpool.h"
 #include "util.h"
 
 using namespace std;
@@ -448,7 +449,7 @@ void Plan::Dump() const {
 }
 
 struct RealCommandRunner : public CommandRunner {
-  explicit RealCommandRunner(const BuildConfig& config) : config_(config) {}
+  explicit RealCommandRunner(const BuildConfig& config);
   virtual ~RealCommandRunner() {}
   virtual bool CanRunMore() const;
   virtual bool StartCommand(Edge* edge);
@@ -458,8 +459,19 @@ struct RealCommandRunner : public CommandRunner {
 
   const BuildConfig& config_;
   SubprocessSet subprocs_;
+  TokenPool *tokens_;
   map<const Subprocess*, Edge*> subproc_to_edge_;
 };
+
+RealCommandRunner::RealCommandRunner(const BuildConfig& config)
+    : config_(config),
+      tokens_(NULL) {
+  TokenPool *tokenpool = new TokenPool;
+  if (tokenpool->Setup())
+    tokens_ = tokenpool;
+  else
+    delete tokenpool;
+}
 
 vector<Edge*> RealCommandRunner::GetActiveEdges() {
   vector<Edge*> edges;
@@ -471,6 +483,8 @@ vector<Edge*> RealCommandRunner::GetActiveEdges() {
 
 void RealCommandRunner::Abort() {
   subprocs_.Clear();
+  if (tokens_)
+    tokens_->Clear();
 }
 
 bool RealCommandRunner::CanRunMore() const {
@@ -478,7 +492,7 @@ bool RealCommandRunner::CanRunMore() const {
       subprocs_.running_.size() + subprocs_.finished_.size();
   return (int)subproc_number < config_.parallelism
     && (subprocs_.running_.empty()
-      || (subprocs_.CanRunMore()
+      || ((!tokens_ || tokens_->Acquire())
         && (config_.max_load_average <= 0.0f
           || GetLoadAverage() < config_.max_load_average)));
 }
@@ -488,6 +502,8 @@ bool RealCommandRunner::StartCommand(Edge* edge) {
   Subprocess* subproc = subprocs_.Add(command, edge->use_console());
   if (!subproc)
     return false;
+  if (tokens_)
+    tokens_->Reserve();
   subproc_to_edge_.insert(make_pair(subproc, edge));
 
   return true;
@@ -500,6 +516,9 @@ bool RealCommandRunner::WaitForCommand(Result* result) {
     if (interrupted)
       return false;
   }
+
+  if (tokens_)
+    tokens_->Release();
 
   result->status = subproc->Finish();
   result->output = subproc->GetOutput();
