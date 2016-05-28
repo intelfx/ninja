@@ -49,7 +49,7 @@ struct DryRunCommandRunner : public CommandRunner {
   // Overridden from CommandRunner:
   virtual bool CanRunMore() const;
   virtual bool StartCommand(Edge* edge);
-  virtual bool WaitForCommand(Result* result);
+  virtual bool WaitForCommand(Result* result, bool more_ready);
 
  private:
   queue<Edge*> finished_;
@@ -64,7 +64,7 @@ bool DryRunCommandRunner::StartCommand(Edge* edge) {
   return true;
 }
 
-bool DryRunCommandRunner::WaitForCommand(Result* result) {
+bool DryRunCommandRunner::WaitForCommand(Result* result, bool more_ready) {
    if (finished_.empty())
      return false;
 
@@ -453,7 +453,7 @@ struct RealCommandRunner : public CommandRunner {
   virtual ~RealCommandRunner();
   virtual bool CanRunMore() const;
   virtual bool StartCommand(Edge* edge);
-  virtual bool WaitForCommand(Result* result);
+  virtual bool WaitForCommand(Result* result, bool more_ready);
   virtual vector<Edge*> GetActiveEdges();
   virtual void Abort();
 
@@ -507,10 +507,10 @@ bool RealCommandRunner::StartCommand(Edge* edge) {
   return true;
 }
 
-bool RealCommandRunner::WaitForCommand(Result* result) {
+bool RealCommandRunner::WaitForCommand(Result* result, bool more_ready) {
   Subprocess* subproc;
   while ((subproc = subprocs_.NextFinished()) == NULL) {
-    bool interrupted = subprocs_.DoWork(tokens_);
+    bool interrupted = subprocs_.DoWork(more_ready ? tokens_ : NULL);
     if (interrupted)
       return false;
   }
@@ -670,7 +670,7 @@ bool Builder::Build(string* err) {
     // See if we can reap any finished commands.
     if (pending_commands) {
       CommandRunner::Result result;
-      if (!command_runner_->WaitForCommand(&result) ||
+      if (!command_runner_->WaitForCommand(&result, plan_.more_ready()) ||
           result.status == ExitInterrupted) {
         Cleanup();
         status_->BuildFinished();
