@@ -150,7 +150,7 @@ void Plan::EdgeWanted(const Edge* edge) {
 }
 
 Edge* Plan::FindWork() {
-  if (ready_.empty())
+  if (!more_ready())
     return NULL;
   EdgeSet::iterator e = ready_.begin();
   Edge* edge = *e;
@@ -640,31 +640,31 @@ bool Builder::Build(string* err) {
   // Second, we attempt to wait for / reap the next finished command.
   while (plan_.more_to_do()) {
     // See if we can start any more commands.
-    if (failures_allowed && command_runner_->CanRunMore()) {
-      if (Edge* edge = plan_.FindWork()) {
-        if (edge->GetBindingBool("generator")) {
+    if (failures_allowed && plan_.more_ready() &&
+        command_runner_->CanRunMore()) {
+      Edge* edge = plan_.FindWork();
+      if (edge->GetBindingBool("generator")) {
           scan_.build_log()->Close();
         }
 
-        if (!StartEdge(edge, err)) {
+      if (!StartEdge(edge, err)) {
+        Cleanup();
+        status_->BuildFinished();
+        return false;
+      }
+
+      if (edge->is_phony()) {
+        if (!plan_.EdgeFinished(edge, Plan::kEdgeSucceeded, err)) {
           Cleanup();
           status_->BuildFinished();
           return false;
         }
-
-        if (edge->is_phony()) {
-          if (!plan_.EdgeFinished(edge, Plan::kEdgeSucceeded, err)) {
-            Cleanup();
-            status_->BuildFinished();
-            return false;
-          }
-        } else {
-          ++pending_commands;
-        }
-
-        // We made some progress; go back to the main loop.
-        continue;
+      } else {
+        ++pending_commands;
       }
+
+      // We made some progress; go back to the main loop.
+      continue;
     }
 
     // See if we can reap any finished commands.
