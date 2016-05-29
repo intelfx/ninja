@@ -302,6 +302,15 @@ bool SubprocessSet::DoWork(struct TokenPool* tokens) {
     ++i;
   }
 
+  if (tokens) {
+    pollfd *pfd = &fds[nfds - 1];
+    if (pfd->fd >= 0) {
+      assert(pfd->fd == tokens->GetMonitorFd());
+      if (pfd->revents != 0)
+        token_available_ = true;
+    }
+  }
+
   return IsInterrupted();
 }
 
@@ -354,6 +363,12 @@ bool SubprocessSet::DoWork(struct TokenPool* tokens) {
       }
     }
     ++i;
+  }
+
+  if (tokens) {
+    int fd = tokens->GetMonitorFd();
+    if ((fd >= 0) && FD_ISSET(fd, &set))
+    token_available_ = true;
   }
 
   return IsInterrupted();

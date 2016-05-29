@@ -93,6 +93,10 @@ struct SubprocessSet {
   std::vector<Subprocess*> running_;
   std::queue<Subprocess*> finished_;
 
+  bool token_available_;
+  bool IsTokenAvailable() { return token_available_; }
+  void ResetTokenAvailable() { token_available_ = false; }
+
 #ifdef _WIN32
   static BOOL WINAPI NotifyInterrupted(DWORD dwCtrlType);
   static HANDLE ioport_;
