@@ -4098,7 +4098,7 @@ struct BuildTokenTest : public BuildTest {
   void ExpectWaitForCommand(int count, ...);
 
 private:
-  void EnqueueBooleans(vector<bool>& booleans, int count, va_list ao);
+  void EnqueueBooleans(vector<bool>& booleans, int count, va_list ap);
 };
 
 void BuildTokenTest::SetUp() {

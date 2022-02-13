@@ -64,9 +64,7 @@ bool GNUmakeTokenPoolPosix::CheckFd(int fd) {
   if (fd < 0)
     return false;
   int ret = fcntl(fd, F_GETFD);
-  if (ret < 0)
-    return false;
-  return true;
+  return ret >= 0;
 }
 
 int GNUmakeTokenPoolPosix::dup_rfd_ = -1;
