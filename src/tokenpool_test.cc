@@ -209,7 +209,7 @@ TEST_F(TokenPoolTest, TwoTokens) {
   tokens_->Release();
   EXPECT_TRUE(tokens_->Acquire());
 
-  // release implict token - must return 2nd token back to jobserver
+  // release implicit token - must return 2nd token back to jobserver
   tokens_->Release();
   EXPECT_TRUE(tokens_->Acquire());
 

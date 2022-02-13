@@ -322,7 +322,7 @@ TEST_F(SubprocessTest, TokenAvailable) {
   subprocs_.DoWork(&tokens_);
 #ifdef _WIN32
   tokens_._token_available = false;
-  // we need to loop here as we have no conrol where the token
+  // we need to loop here as we have no control where the token
   // I/O completion post ends up in the queue
   while (!subproc->Done() && !subprocs_.IsTokenAvailable()) {
     subprocs_.DoWork(&tokens_);
