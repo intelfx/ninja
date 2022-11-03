@@ -50,6 +50,10 @@ struct TokenPoolTest : public testing::Test {
   HANDLE semaphore_;
 #else
   int fds_[2];
+
+  char random() {
+    return int((rand() / double(RAND_MAX)) * 256);
+  }
 #endif
 
   virtual void SetUp() {
@@ -199,7 +203,8 @@ TEST_F(TokenPoolTest, TwoTokens) {
   ASSERT_TRUE(ReleaseSemaphore(semaphore_, 1, &previous));
   ASSERT_EQ(0, previous);
 #else
-  ASSERT_EQ(1u, write(fds_[1], "T", 1));
+  char test_tokens[1] = { random() };
+  ASSERT_EQ(1u, write(fds_[1], test_tokens, sizeof(test_tokens)));
 #endif
   EXPECT_TRUE(tokens_->Acquire());
   tokens_->Reserve();
@@ -220,6 +225,7 @@ TEST_F(TokenPoolTest, TwoTokens) {
   EXPECT_EQ(0, previous);
 #else
   EXPECT_EQ(1u, read(fds_[0], buf_, sizeof(buf_)));
+  EXPECT_EQ(test_tokens[0], buf_[0]);
 #endif
 
   // implicit token
@@ -243,7 +249,8 @@ TEST_F(TokenPoolTest, Clear) {
   ASSERT_TRUE(ReleaseSemaphore(semaphore_, 2, &previous));
   ASSERT_EQ(0, previous);
 #else
-  ASSERT_EQ(2u, write(fds_[1], "TT", 2));
+  char test_tokens[2] = { random(), random() };
+  ASSERT_EQ(2u, write(fds_[1], test_tokens, sizeof(test_tokens)));
 #endif
   EXPECT_TRUE(tokens_->Acquire());
   tokens_->Reserve();
@@ -262,6 +269,9 @@ TEST_F(TokenPoolTest, Clear) {
   EXPECT_EQ(0, previous);
 #else
   EXPECT_EQ(2u, read(fds_[0], buf_, sizeof(buf_)));
+  // tokens are pushed onto a stack, hence returned in reverse order
+  EXPECT_EQ(test_tokens[0], buf_[1]);
+  EXPECT_EQ(test_tokens[1], buf_[0]);
 #endif
 
   // implicit token

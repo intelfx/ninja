@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stack>
 
 // TokenPool implementation for GNU make jobserver - POSIX implementation
 // (http://make.mad-scientist.net/papers/jobserver-implementation/)
@@ -43,6 +44,16 @@ struct GNUmakeTokenPoolPosix : public GNUmakeTokenPool {
 
   struct sigaction old_act_;
   bool restore_;
+
+  // See https://www.gnu.org/software/make/manual/html_node/POSIX-Jobserver.html
+  //
+  //   It’s important that when you release the job slot, you write back
+  //   the same character you read. Don’t assume that all tokens are the
+  //   same character different characters may have different meanings to
+  //   GNU make. The order is not important, since make has no idea in
+  //   what order jobs will complete anyway.
+  //
+  std::stack<char> tokens_;
 
   static int dup_rfd_;
   static void CloseDupRfd(int signum);
@@ -133,6 +144,7 @@ bool GNUmakeTokenPoolPosix::AcquireToken() {
     if (dup_rfd_ != -1) {
       struct sigaction act, old_act;
       int ret = 0;
+      char buf;
 
       // Temporarily replace SIGCHLD handler with our own
       memset(&act, 0, sizeof(act));
@@ -144,8 +156,6 @@ bool GNUmakeTokenPoolPosix::AcquireToken() {
         memset(&timeout, 0, sizeof(timeout));
         timeout.it_value.tv_usec = 100 * 1000; // [ms] -> [usec]
         if (setitimer(ITIMER_REAL, &timeout, NULL) == 0) {
-          char buf;
-
           // Now try to read() from dup_rfd_. Return values from read():
           //
           // 1. token read                               ->  1
@@ -168,8 +178,10 @@ bool GNUmakeTokenPoolPosix::AcquireToken() {
       CloseDupRfd(0);
 
       // Case 1 from above list
-      if (ret > 0)
+      if (ret > 0) {
+        tokens_.push(buf);
         return true;
+      }
     }
   }
 
@@ -180,11 +192,13 @@ bool GNUmakeTokenPoolPosix::AcquireToken() {
 }
 
 bool GNUmakeTokenPoolPosix::ReturnToken() {
-  const char buf = '+';
+  const char buf = tokens_.top();
   while (1) {
     int ret = write(wfd_, &buf, 1);
-    if (ret > 0)
+    if (ret > 0) {
+      tokens_.pop();
       return true;
+    }
     if ((ret != -1) || (errno != EINTR))
       return false;
     // write got interrupted - retry
